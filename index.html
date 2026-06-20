@@ -161,7 +161,7 @@ $('#gear').onclick=()=>{ $('#passInput').value=getPass(); $('#setup').classList.
 $('#savePass').onclick=()=>{ const v=$('#passInput').value.trim(); if(v)localStorage.setItem(PASS_LS,v); $('#setup').classList.add('hidden'); };
 
 /* ---------- 통역 (서버 프록시 호출, 스트리밍) ---------- */
-async function interpretStream(text, dir, onDelta){
+async function interpretStream(text, dir, onDelta, onTarget){
   const res = await fetch('/api/translate',{
     method:'POST', headers:{'content-type':'application/json'},
     body: JSON.stringify({ text, dir, pass:getPass(), tone:getTone() })
@@ -169,7 +169,7 @@ async function interpretStream(text, dir, onDelta){
   if(res.status===401){ localStorage.removeItem(PASS_LS); ensurePass('암호가 틀렸어요. 다시 입력해 주세요.'); throw new Error('암호 오류'); }
   if(!res.ok){ throw new Error('서버 오류 '+res.status); }
   const reader=res.body.getReader(); const dec=new TextDecoder();
-  let buf='', acc='';
+  let buf='', acc='', firedTarget=false;
   while(true){
     const {value,done}=await reader.read(); if(done) break;
     buf+=dec.decode(value,{stream:true});
@@ -179,7 +179,10 @@ async function interpretStream(text, dir, onDelta){
       if(!line.startsWith('data:')) continue;
       const d=line.slice(5).trim(); if(!d||d==='[DONE]') continue;
       try{ const ev=JSON.parse(d);
-        if(ev.type==='content_block_delta'&&ev.delta?.type==='text_delta'){ acc+=ev.delta.text; onDelta(acc); }
+        if(ev.type==='content_block_delta'&&ev.delta?.type==='text_delta'){
+          acc+=ev.delta.text; onDelta(acc);
+          if(!firedTarget && onTarget){ const nl=acc.indexOf('\n'); if(nl>=0){ firedTarget=true; onTarget(acc.slice(0,nl).trim()); } } // 첫 줄(번역문) 끝나면 즉시 알림
+        }
       }catch(e){}
     }
   }
@@ -266,10 +269,14 @@ function startRec(dir){
     const text=finalText.trim(); if(!text){ srcEl.textContent=''; return; }
     try{
       if(dir==='ko2ja') renderKo2Ja(text,'…'); else renderJa2Ko(text,'…');
-      await interpretStream(text, dir, acc=>{ if(dir==='ko2ja') renderKo2Ja(text,acc); else renderJa2Ko(text,acc); });
-      if(interpOn()){ // 통역사 모드: 말 끝나면 상대 언어 자동 읽어주기
-        if(dir==='ko2ja') speak(meSpeak, getVoice('me')); else speak(themSpeak, getVoice('them'));
-      }
+      let spoke=false;
+      const fireTTS=(target)=>{ if(!interpOn()||spoke||!target) return; spoke=true;  // 첫 줄 나오자마자 읽기 시작(발음표기 안 기다림)
+        if(dir==='ko2ja') speak({t:target,lang:'ja-JP'}, getVoice('me'));
+        else speak({t:target,lang:'ko-KR'}, getVoice('them')); };
+      const acc=await interpretStream(text, dir,
+        a=>{ if(dir==='ko2ja') renderKo2Ja(text,a); else renderJa2Ko(text,a); },
+        fireTTS);
+      fireTTS((acc.split('\n')[0]||'').trim());   // 줄바꿈 없이 끝난 경우 폴백
     }catch(err){ status(err.message); setTimeout(()=>status(''),3500); }
   };
   try{ rec.start(); }catch(e){}

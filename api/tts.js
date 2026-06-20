@@ -18,10 +18,11 @@ export default async function handler(req){
   if(process.env.ELEVENLABS_API_KEY){
     const voice = reqVoice || (isKo ? process.env.ELEVEN_VOICE_KO : process.env.ELEVEN_VOICE_JA)
       || process.env.ELEVEN_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
-    const r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+voice, {
+    const model = process.env.ELEVEN_MODEL || 'eleven_flash_v2_5';   // 초저지연 다국어
+    const r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+voice+'?output_format=mp3_44100_64', {
       method:'POST',
       headers:{ 'xi-api-key':process.env.ELEVENLABS_API_KEY, 'content-type':'application/json', 'accept':'audio/mpeg' },
-      body: JSON.stringify({ text, model_id:'eleven_multilingual_v2', voice_settings:{ stability:0.4, similarity_boost:0.85, style:0.3 } })
+      body: JSON.stringify({ text, model_id:model, voice_settings:{ stability:0.4, similarity_boost:0.8 } })
     });
     if(!r.ok){ const t=await r.text().catch(()=> ''); return new Response('eleven '+r.status+' '+t.slice(0,120), { status:502 }); }
     return new Response(r.body, { headers: audioHeaders });
