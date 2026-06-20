@@ -1,0 +1,54 @@
+// Vercel Edge Function — 한일 통역 프록시
+// 키는 환경변수에만 보관(클라이언트/소스에 노출 X). 암호 통과한 요청만 통역 용도로 처리.
+export const config = { runtime: 'edge' };
+
+const MODEL = 'claude-haiku-4-5';
+const SYS = '너는 한국-일본 여행 통역기다. 여행지에서 쓰는 정중한 회화체로 통역한다. 지시한 형식만 정확히 출력하고 다른 말/따옴표/번호는 절대 붙이지 않는다.';
+
+function buildPrompt(text, dir){
+  if(dir === 'ko2ja'){
+    return '다음 한국어를 일본어로 통역하고, 그 일본어 발음을 한글로 적어라.\n'+
+      '한글 발음 규칙: 한국인이 그대로 소리 내면 일본인이 알아듣도록 실제 발음에 최대한 가깝게. '+
+      '촉음(っ)은 앞 글자 받침으로(예: ちょっと→촛토), ん은 뒤소리에 맞춰 ㄴ/ㅁ/ㅇ으로, '+
+      '장음은 과하게 늘리지 말고 자연스럽게, 단어 단위로 띄어 읽기 좋게 적어라.\n'+
+      '출력은 딱 두 줄:\n1번째 줄: 일본어\n2번째 줄: 한글 발음\n\n한국어: '+text;
+  }
+  return '다음 일본어를 한국어로 자연스럽게 통역하라. 통역문 한 줄만 출력.\n\n일본어: '+text;
+}
+
+export default async function handler(req){
+  if(req.method !== 'POST') return new Response('Method Not Allowed', { status:405 });
+
+  let body;
+  try { body = await req.json(); } catch(e){ return new Response('bad json', { status:400 }); }
+  const { text, dir, pass } = body || {};
+
+  // 암호 게이트
+  if(!process.env.APP_PASSCODE || pass !== process.env.APP_PASSCODE){
+    return new Response(JSON.stringify({ error:'unauthorized' }), { status:401, headers:{'content-type':'application/json'} });
+  }
+  // 입력 검증 (통역 용도로만 + 남용 방지)
+  if(typeof text !== 'string' || !text.trim() || text.length > 400) return new Response('bad text', { status:400 });
+  if(dir !== 'ko2ja' && dir !== 'ja2ko') return new Response('bad dir', { status:400 });
+  if(!process.env.ANTHROPIC_API_KEY) return new Response('server not configured', { status:500 });
+
+  const upstream = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version':'2023-06-01'
+    },
+    body: JSON.stringify({
+      model: MODEL, max_tokens: 400, stream: true, system: SYS,
+      messages:[{ role:'user', content: buildPrompt(text, dir) }]
+    })
+  });
+
+  if(!upstream.ok || !upstream.body){
+    const t = await upstream.text().catch(()=> '');
+    return new Response('upstream '+upstream.status+' '+t.slice(0,160), { status:502 });
+  }
+  // Anthropic SSE 스트림을 그대로 클라이언트로 통과
+  return new Response(upstream.body, { headers:{ 'content-type':'text/event-stream; charset=utf-8', 'cache-control':'no-cache' } });
+}
