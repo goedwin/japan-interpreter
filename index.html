@@ -31,7 +31,8 @@
   .src{ font-size:14px; color:var(--dim); margin-bottom:10px; line-height:1.4; }
   .src .interim{ color:var(--accent); }
   .main-ja{ font-size:27px; font-weight:700; line-height:1.35; word-break:break-word; }
-  .yomi{ margin-top:13px; font-size:22px; font-weight:600; color:var(--accent); line-height:1.5; word-break:break-word; }
+  .yomi{ margin-top:12px; font-size:19px; font-weight:600; color:var(--accent); line-height:1.5; word-break:break-word; }
+  .panel.them .yomi{ color:var(--accent2); }
   .placeholder{ font-size:17px; color:#46505c; font-weight:500; }
 
   .controls{ flex:0 0 auto; display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap; padding:10px 16px calc(12px + env(safe-area-inset-bottom)); }
@@ -70,7 +71,7 @@
     .divider{ width:1px; height:auto; background:linear-gradient(180deg,transparent,#2c3947,transparent); }
     .panel.them{ transform:none; }
     .scroll{ padding-top:26px; }
-    .main-ja{ font-size:24px; } .yomi{ font-size:20px; }
+    .main-ja{ font-size:24px; } .yomi{ font-size:17px; }
   }
 </style>
 </head>
@@ -81,6 +82,7 @@
     <div class="scroll"><div class="bubble">
       <div class="src" id="srcThem"></div>
       <div class="main-ja" id="mainThem"><span class="placeholder">버튼을 눌러 말하세요</span></div>
+      <div class="yomi" id="yomiThem"></div>
     </div></div>
     <div class="controls"><button class="mic" id="micThem">🎤 日本語で話す</button></div>
   </div>
@@ -161,17 +163,20 @@ async function interpretStream(text, dir, onDelta){
 
 /* ---------- 렌더링 ---------- */
 let current=null;
+const twoLines=acc=>{ const l=acc.split('\n'); return [ (l[0]||'').trim(), (l[1]||'').trim() ]; };
+
 function renderKo2Ja(srcText, accText){
-  const lines=accText.split('\n'); const ja=(lines[0]||'').trim(); const reading=(lines[1]||'').trim();
+  const [ja, reading]=twoLines(accText);
   $('#srcMe').innerHTML='🗣️ '+escapeHtml(srcText);
   $('#mainMe').textContent=ja||'…'; $('#yomiMe').textContent=reading;
-  $('#mainThem').textContent=ja||'…'; $('#srcThem').textContent='';
+  $('#mainThem').textContent=ja||'…'; $('#yomiThem').textContent=''; $('#srcThem').textContent='';
   current={ko:srcText, ja, reading};
 }
 function renderJa2Ko(srcText, accText){
-  const ko=accText.trim();
-  $('#srcThem').textContent=srcText; $('#mainThem').textContent=srcText;
-  $('#mainMe').textContent=ko||'…'; $('#srcMe').innerHTML='👂 상대방 말'; $('#yomiMe').textContent='';
+  const [ko, yomi]=twoLines(accText);
+  $('#srcThem').textContent=srcText;
+  $('#mainThem').textContent=ko||'…'; $('#yomiThem').textContent=yomi;   // 상대(일본인)가 한국어를 읽도록 가타카나 발음
+  $('#mainMe').textContent=ko||'…'; $('#yomiMe').textContent=''; $('#srcMe').innerHTML='👂 상대방 말';
 }
 
 /* ---------- 음성 인식 ---------- */
