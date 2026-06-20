@@ -2,16 +2,6 @@
 // ElevenLabs 키가 있으면 우선(다국어 자연스러움), 없으면 OpenAI. 둘 다 없으면 503 → 프론트가 기기음성으로 폴백.
 export const config = { runtime: 'edge' };
 
-// 클라이언트가 고를 수 있는 보이스 허용 목록(악용 방지). 프론트 VOICES와 동일하게 유지.
-const ALLOWED_VOICES = new Set([
-  'pNInz6obpgDQGcFmaJgB', // 남성1 Adam
-  'ErXwobaYiN019PkySvjV', // 남성2 Antoni
-  'TxGEqnHWrfWFTfGW9XjX', // 남성3 Josh
-  '21m00Tcm4TlvDq8ikWAM', // 여성1 Rachel
-  'EXAVITQu4vr4xnSDxMaL', // 여성2 Bella
-  'MF3mGyEYCl7XYWbV9V6O', // 여성3 Elli
-]);
-
 export default async function handler(req){
   if(req.method !== 'POST') return new Response('Method Not Allowed', { status:405 });
   let body; try { body = await req.json(); } catch(e){ return new Response('bad json', { status:400 }); }
@@ -21,7 +11,7 @@ export default async function handler(req){
   if(typeof text !== 'string' || !text.trim() || text.length > 400) return new Response('bad text', { status:400 });
 
   const isKo = (lang || '').toLowerCase().startsWith('ko');
-  const reqVoice = (typeof voice === 'string' && ALLOWED_VOICES.has(voice)) ? voice : null;
+  const reqVoice = (typeof voice === 'string' && /^[A-Za-z0-9]{16,40}$/.test(voice)) ? voice : null;
   const audioHeaders = { 'content-type':'audio/mpeg', 'cache-control':'no-store' };
 
   // 1) ElevenLabs (다국어 v2 — 일/한 자연스러움). 클라이언트 선택 > env > 기본.
