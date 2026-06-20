@@ -84,7 +84,7 @@
       <div class="main-ja" id="mainThem"><span class="placeholder">버튼을 눌러 말하세요</span></div>
       <div class="yomi" id="yomiThem"></div>
     </div></div>
-    <div class="controls"><button class="mic" id="micThem">🎤 日本語で話す</button></div>
+    <div class="controls"><button class="mic" id="micThem">🎤 日本語で話す</button><button class="iconbtn" id="speakThem" title="読み上げ">🔊</button></div>
   </div>
 
   <div class="divider"></div>
@@ -98,6 +98,7 @@
     </div></div>
     <div class="controls">
       <button class="mic" id="micMe">🎤 한국어로 말하기</button>
+      <button class="iconbtn" id="speakMe" title="읽어주기">🔊</button>
       <button class="iconbtn" id="saveFav" title="즐겨찾기 저장">☆</button>
       <button class="iconbtn" id="openFav" title="즐겨찾기 목록">⭐︎</button>
     </div>
@@ -162,7 +163,7 @@ async function interpretStream(text, dir, onDelta){
 }
 
 /* ---------- 렌더링 ---------- */
-let current=null;
+let current=null, meSpeak=null, themSpeak=null;
 const twoLines=acc=>{ const l=acc.split('\n'); return [ (l[0]||'').trim(), (l[1]||'').trim() ]; };
 
 function renderKo2Ja(srcText, accText){
@@ -171,12 +172,24 @@ function renderKo2Ja(srcText, accText){
   $('#mainMe').textContent=ja||'…'; $('#yomiMe').textContent=reading;
   $('#mainThem').textContent=ja||'…'; $('#yomiThem').textContent=''; $('#srcThem').textContent='';
   current={ko:srcText, ja, reading};
+  meSpeak=themSpeak={t:ja, lang:'ja-JP'};   // 양쪽 다 일본어 문장
 }
 function renderJa2Ko(srcText, accText){
   const [ko, yomi]=twoLines(accText);
   $('#srcThem').textContent=srcText;
   $('#mainThem').textContent=ko||'…'; $('#yomiThem').textContent=yomi;   // 상대(일본인)가 한국어를 읽도록 가타카나 발음
   $('#mainMe').textContent=ko||'…'; $('#yomiMe').textContent=''; $('#srcMe').innerHTML='👂 상대방 말';
+  meSpeak=themSpeak={t:ko, lang:'ko-KR'};    // 양쪽 다 한국어 문장
+}
+
+/* ---------- 읽어주기 (TTS, 버튼으로만) ---------- */
+function speak(s){
+  if(!s||!s.t||!window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(s.t); u.lang=s.lang; u.rate=0.95;
+  const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.toLowerCase().startsWith(s.lang.slice(0,2)));
+  if(v) u.voice=v;
+  speechSynthesis.speak(u);
 }
 
 /* ---------- 음성 인식 ---------- */
@@ -233,12 +246,15 @@ function renderFavList(){
 
 $('#micMe').onclick=()=>startRec('ko2ja');
 $('#micThem').onclick=()=>startRec('ja2ko');
+$('#speakMe').onclick=()=>speak(meSpeak);
+$('#speakThem').onclick=()=>speak(themSpeak);
 
 /* 모드 전환 안내 (세로=테이블 / 가로=바) */
 const mq=window.matchMedia('(orientation:landscape)');
 function flashMode(){ status(mq.matches?'🍶 바 모드 (나란히)':'🍽 테이블 모드 (마주봄)'); setTimeout(()=>status(''),1300); }
 mq.addEventListener?.('change', flashMode);
 
+if(window.speechSynthesis){ speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged=()=>{}; }
 if(!getPass()) $('#setup').classList.remove('hidden');
 </script>
 </body>
