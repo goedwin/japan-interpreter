@@ -18,7 +18,7 @@ export default async function handler(req){
   if(process.env.ELEVENLABS_API_KEY){
     const voice = reqVoice || (isKo ? process.env.ELEVEN_VOICE_KO : process.env.ELEVEN_VOICE_JA)
       || process.env.ELEVEN_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
-    const model = process.env.ELEVEN_MODEL || 'eleven_flash_v2_5';   // 초저지연 다국어
+    const model = process.env.ELEVEN_MODEL || 'eleven_turbo_v2_5';   // 품질·속도 균형(다국어)
     const r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+voice+'?output_format=mp3_44100_64', {
       method:'POST',
       headers:{ 'xi-api-key':process.env.ELEVENLABS_API_KEY, 'content-type':'application/json', 'accept':'audio/mpeg' },
