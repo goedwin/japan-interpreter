@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>일본여행 통역기</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel-ja:#16202b; --panel-ko:#1a1410;
+    --ink:#f4f1ea; --dim:#8a93a0; --accent:#e8915b; --accent2:#5ba0e8;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Hiragino Kaku Gothic ProN","Segoe UI",sans-serif;
+    height:100dvh; display:flex; flex-direction:column; overflow:hidden;
+  }
+
+  .panel{
+    flex:1; position:relative; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; padding:18px 20px; min-height:0;
+  }
+  .panel.them{ background:var(--panel-ja); transform:rotate(180deg); }
+  .panel.me{ background:var(--panel-ko); }
+  .divider{ height:1px; background:linear-gradient(90deg,transparent,#2c3947,transparent); }
+
+  .tag{
+    position:absolute; top:12px; font-size:12px; letter-spacing:.08em;
+    color:var(--dim); text-transform:uppercase;
+  }
+  .panel.them .tag{ color:#6f8aa8; }
+
+  .bubble{ width:100%; max-width:560px; text-align:center; }
+  .src{ font-size:15px; color:var(--dim); margin-bottom:10px; min-height:20px; line-height:1.4; }
+  .src .interim{ color:var(--accent); }
+  .main-ja{ font-size:30px; font-weight:700; line-height:1.35; word-break:break-word; }
+  .yomi{
+    margin-top:14px; font-size:24px; font-weight:600; color:var(--accent);
+    line-height:1.5; word-break:break-word;
+  }
+  .placeholder{ font-size:18px; color:#46505c; font-weight:500; }
+
+  .controls{ display:flex; gap:10px; align-items:center; margin-top:22px; flex-wrap:wrap; justify-content:center; }
+  .mic{
+    border:none; border-radius:999px; padding:16px 28px; font-size:18px; font-weight:700;
+    color:#0e1116; cursor:pointer; display:flex; align-items:center; gap:10px;
+    transition:transform .08s, box-shadow .2s;
+  }
+  .mic:active{ transform:scale(.96); }
+  .panel.me .mic{ background:var(--accent); }
+  .panel.them .mic{ background:var(--accent2); }
+  .mic.live{ animation:pulse 1s infinite; box-shadow:0 0 0 0 rgba(232,145,91,.5); }
+  .panel.them .mic.live{ box-shadow:0 0 0 0 rgba(91,160,232,.5); }
+  @keyframes pulse{ 70%{ box-shadow:0 0 0 16px rgba(232,145,91,0);} 100%{box-shadow:0 0 0 0 rgba(232,145,91,0);} }
+  .iconbtn{
+    border:1.5px solid #3a4654; background:transparent; color:var(--dim);
+    border-radius:999px; min-width:50px; height:50px; padding:0 14px; font-size:18px; cursor:pointer;
+  }
+  .iconbtn:active{ background:#ffffff14; }
+  .iconbtn.on{ border-color:var(--accent); color:var(--accent); }
+
+  #gear{
+    position:fixed; top:10px; right:12px; z-index:20; background:#0008; color:#cfd6df;
+    border:none; border-radius:8px; padding:6px 9px; font-size:15px; cursor:pointer;
+  }
+  #status{
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:#000a; color:#fff; padding:8px 16px; border-radius:999px; font-size:14px;
+    z-index:30; display:none; pointer-events:none;
+  }
+
+  /* overlays */
+  .overlay{ position:fixed; inset:0; background:#0e1116ee; backdrop-filter:blur(6px); z-index:40; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .overlay .card{ width:100%; max-width:440px; max-height:80vh; overflow:auto; background:#16202b; border:1px solid #2c3947; border-radius:16px; padding:22px; }
+  .card h2{ margin:0 0 6px; font-size:20px; }
+  .card p{ margin:0 0 16px; color:var(--dim); font-size:14px; line-height:1.5; }
+  .card input{ width:100%; padding:12px 14px; border-radius:10px; border:1px solid #2c3947; background:#0e1116; color:var(--ink); font-size:15px; margin-bottom:14px; }
+  .card .primary{ width:100%; padding:13px; border:none; border-radius:10px; background:var(--accent); color:#0e1116; font-size:16px; font-weight:700; cursor:pointer; }
+  .card .head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .card .head h2{ margin:0; }
+  .card .x{ background:none; border:none; color:var(--dim); font-size:22px; cursor:pointer; }
+  .fav{ display:flex; align-items:center; gap:10px; padding:12px; border:1px solid #2c3947; border-radius:12px; margin-bottom:10px; cursor:pointer; }
+  .fav:active{ background:#ffffff10; }
+  .fav .txt{ flex:1; min-width:0; }
+  .fav .ko{ font-size:15px; font-weight:600; }
+  .fav .ja{ font-size:14px; color:#9fb4ca; margin-top:2px; }
+  .fav .ym{ font-size:13px; color:var(--accent); margin-top:2px; }
+  .fav .del{ background:none; border:none; color:#6b7785; font-size:18px; padding:6px; cursor:pointer; }
+  .empty{ color:#46505c; text-align:center; padding:24px 0; }
+  .hidden{ display:none !important; }
+</style>
+</head>
+<body>
+
+  <!-- 상대방(일본어) : 180도 뒤집힘 -->
+  <div class="panel them" id="panelThem">
+    <div class="tag">相手 · 日本語</div>
+    <div class="bubble">
+      <div class="src" id="srcThem"></div>
+      <div class="main-ja" id="mainThem"><span class="placeholder">버튼을 눌러 말하세요</span></div>
+    </div>
+    <div class="controls">
+      <button class="mic" id="micThem">🎤 日本語で話す</button>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 나(한국어) -->
+  <div class="panel me" id="panelMe">
+    <div class="tag">나 · 한국어</div>
+    <div class="bubble">
+      <div class="src" id="srcMe"></div>
+      <div class="main-ja" id="mainMe"><span class="placeholder">버튼을 눌러 한국어로 말하기</span></div>
+      <div class="yomi" id="yomiMe"></div>
+    </div>
+    <div class="controls">
+      <button class="mic" id="micMe">🎤 한국어로 말하기</button>
+      <button class="iconbtn" id="saveFav" title="즐겨찾기 저장">☆</button>
+      <button class="iconbtn" id="openFav" title="즐겨찾기 목록">⭐︎</button>
+    </div>
+  </div>
+
+  <button id="gear">⚙︎</button>
+  <div id="status"></div>
+
+  <!-- API 키 설정 -->
+  <div id="setup" class="overlay hidden">
+    <div class="card">
+      <h2>통역 켜기</h2>
+      <p>Anthropic API 키를 넣으면 이 기기에만 저장됩니다(localStorage). 마이크는 한 번 허용해 주세요.</p>
+      <input id="keyInput" type="password" placeholder="sk-ant-..." autocomplete="off">
+      <button class="primary" id="saveKey">저장하고 시작</button>
+    </div>
+  </div>
+
+  <!-- 즐겨찾기 목록 -->
+  <div id="favBox" class="overlay hidden">
+    <div class="card">
+      <div class="head"><h2>⭐ 즐겨찾기</h2><button class="x" id="closeFav">✕</button></div>
+      <div id="favList"></div>
+    </div>
+  </div>
+
+<script>
+const MODEL = 'claude-haiku-4-5';
+const KEY_LS = 'anthropic_key';
+const FAV_LS = 'jp_favs';
+
+const $ = s => document.querySelector(s);
+const status = (t)=>{ const el=$('#status'); if(!t){el.style.display='none';return;} el.textContent=t; el.style.display='block'; };
+const escapeHtml = s => s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+/* ---------- API 키 ---------- */
+const getKey = ()=> localStorage.getItem(KEY_LS) || '';
+function ensureKey(){ if(getKey()) return true; $('#setup').classList.remove('hidden'); return false; }
+$('#gear').onclick = ()=>{ $('#keyInput').value=getKey(); $('#setup').classList.remove('hidden'); };
+$('#saveKey').onclick = ()=>{ const v=$('#keyInput').value.trim(); if(v) localStorage.setItem(KEY_LS,v); $('#setup').classList.add('hidden'); };
+
+/* ---------- 통역(Claude, 스트리밍) ---------- */
+const SYS = '너는 한국-일본 여행 통역기다. 여행지에서 쓰는 정중한 회화체로 통역한다. 지시한 형식만 정확히 출력하고 다른 말/따옴표/번호는 절대 붙이지 않는다.';
+
+function buildPrompt(text, dir){
+  if(dir==='ko2ja'){
+    return '다음 한국어를 일본어로 통역하고, 그 일본어 발음을 한글로 적어라.\n'+
+      '한글 발음 규칙: 한국인이 그대로 소리 내면 일본인이 알아듣도록 실제 발음에 최대한 가깝게. '+
+      '촉음(っ)은 앞 글자 받침으로(예: ちょっと→촛토), ん은 뒤소리에 맞춰 ㄴ/ㅁ/ㅇ으로, '+
+      '장음은 과하게 늘리지 말고 자연스럽게, 단어 단위로 띄어 읽기 좋게 적어라.\n'+
+      '출력은 딱 두 줄:\n1번째 줄: 일본어\n2번째 줄: 한글 발음\n\n한국어: '+text;
+  }
+  return '다음 일본어를 한국어로 자연스럽게 통역하라. 통역문 한 줄만 출력.\n\n일본어: '+text;
+}
+
+async function interpretStream(text, dir, onDelta){
+  const res = await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'x-api-key':getKey(),
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body: JSON.stringify({ model:MODEL, max_tokens:400, stream:true, system:SYS,
+      messages:[{role:'user',content:buildPrompt(text,dir)}] })
+  });
+  if(!res.ok){ throw new Error('API '+res.status+': '+(await res.text()).slice(0,120)); }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf='', acc='';
+  while(true){
+    const {value,done} = await reader.read();
+    if(done) break;
+    buf += dec.decode(value,{stream:true});
+    let i;
+    while((i=buf.indexOf('\n'))>=0){
+      const line = buf.slice(0,i); buf=buf.slice(i+1);
+      if(!line.startsWith('data:')) continue;
+      const d = line.slice(5).trim();
+      if(!d || d==='[DONE]') continue;
+      try{
+        const ev = JSON.parse(d);
+        if(ev.type==='content_block_delta' && ev.delta?.type==='text_delta'){
+          acc += ev.delta.text; onDelta(acc);
+        }
+      }catch(e){}
+    }
+  }
+  return acc;
+}
+
+/* ---------- 렌더링 ---------- */
+let current = null; // {ko, ja, reading} (내가 말한 마지막 통역)
+
+function renderKo2Ja(srcText, accText){
+  const lines = accText.split('\n');
+  const ja = (lines[0]||'').trim();
+  const reading = (lines[1]||'').trim();
+  $('#srcMe').innerHTML = '🗣️ '+escapeHtml(srcText);
+  $('#mainMe').textContent = ja || '…';
+  $('#yomiMe').textContent = reading;
+  $('#mainThem').textContent = ja || '…';
+  $('#srcThem').textContent = '';
+  current = { ko:srcText, ja, reading };
+}
+function renderJa2Ko(srcText, accText){
+  const ko = accText.trim();
+  $('#srcThem').textContent = srcText;
+  $('#mainThem').textContent = srcText;
+  $('#mainMe').textContent = ko || '…';
+  $('#srcMe').innerHTML = '👂 상대방 말';
+  $('#yomiMe').textContent = '';
+}
+
+/* ---------- 음성 인식 ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec=null, recording=null;
+
+function startRec(dir){
+  if(!ensureKey()) return;
+  if(!SR){ status('이 브라우저는 음성인식 미지원 (크롬 권장)'); setTimeout(()=>status(''),2500); return; }
+  if(recording){ stopRec(); return; }
+
+  rec = new SR();
+  rec.lang = dir==='ko2ja' ? 'ko-KR' : 'ja-JP';
+  rec.interimResults = true; rec.continuous = false;
+  recording = dir;
+
+  const micBtn = dir==='ko2ja' ? $('#micMe') : $('#micThem');
+  const srcEl  = dir==='ko2ja' ? $('#srcMe') : $('#srcThem');
+  micBtn.classList.add('live');
+  srcEl.innerHTML = '<span class="interim">…</span>';
+
+  let finalText='';
+  rec.onresult = (e)=>{
+    let interim='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      if(e.results[i].isFinal) finalText+=t; else interim+=t;
+    }
+    srcEl.innerHTML = '<span class="interim">'+escapeHtml(finalText+interim)+'</span>';
+  };
+  rec.onerror = (e)=>{ status('인식 오류: '+e.error); setTimeout(()=>status(''),2000); };
+  rec.onend = async ()=>{
+    micBtn.classList.remove('live'); recording=null;
+    const text = finalText.trim();
+    if(!text){ srcEl.textContent=''; return; }
+    try{
+      if(dir==='ko2ja') renderKo2Ja(text,'…'); else renderJa2Ko(text,'…');
+      await interpretStream(text, dir, (acc)=>{
+        if(dir==='ko2ja') renderKo2Ja(text,acc); else renderJa2Ko(text,acc);
+      });
+    }catch(err){ status(err.message); setTimeout(()=>status(''),4000); }
+  };
+  try{ rec.start(); }catch(e){}
+}
+function stopRec(){ if(rec){ try{rec.stop();}catch(e){} } }
+
+/* ---------- 즐겨찾기 ---------- */
+const getFavs = ()=>{ try{ return JSON.parse(localStorage.getItem(FAV_LS))||[]; }catch(e){ return []; } };
+const setFavs = a => localStorage.setItem(FAV_LS, JSON.stringify(a));
+
+$('#saveFav').onclick = ()=>{
+  if(!current || !current.ja){ status('저장할 문장이 없어요'); setTimeout(()=>status(''),1500); return; }
+  const favs = getFavs();
+  if(favs.some(f=>f.ko===current.ko && f.ja===current.ja)){ status('이미 저장됨'); setTimeout(()=>status(''),1200); return; }
+  favs.unshift({ ko:current.ko, ja:current.ja, reading:current.reading });
+  setFavs(favs); status('⭐ 저장됨'); setTimeout(()=>status(''),1200);
+};
+$('#openFav').onclick = ()=>{ renderFavList(); $('#favBox').classList.remove('hidden'); };
+$('#closeFav').onclick = ()=> $('#favBox').classList.add('hidden');
+
+function renderFavList(){
+  const favs = getFavs(); const box = $('#favList');
+  if(!favs.length){ box.innerHTML = '<div class="empty">아직 저장된 문장이 없어요.<br>통역 후 ☆ 버튼으로 저장하세요.</div>'; return; }
+  box.innerHTML='';
+  favs.forEach((f,idx)=>{
+    const row = document.createElement('div'); row.className='fav';
+    row.innerHTML = '<div class="txt"><div class="ko"></div><div class="ja"></div><div class="ym"></div></div><button class="del">✕</button>';
+    row.querySelector('.ko').textContent = f.ko;
+    row.querySelector('.ja').textContent = f.ja;
+    row.querySelector('.ym').textContent = f.reading||'';
+    row.querySelector('.txt').onclick = ()=>{
+      renderKo2Ja(f.ko, f.ja+'\n'+(f.reading||''));
+      $('#favBox').classList.add('hidden');
+    };
+    row.querySelector('.del').onclick = (e)=>{ e.stopPropagation(); const a=getFavs(); a.splice(idx,1); setFavs(a); renderFavList(); };
+    box.appendChild(row);
+  });
+}
+
+$('#micMe').onclick   = ()=> startRec('ko2ja');
+$('#micThem').onclick = ()=> startRec('ja2ko');
+
+if(!getKey()) $('#setup').classList.remove('hidden');
+</script>
+</body>
+</html>
