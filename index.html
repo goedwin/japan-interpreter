@@ -182,20 +182,43 @@ function renderJa2Ko(srcText, accText){
   meSpeak=themSpeak={t:ko, lang:'ko-KR'};    // 양쪽 다 한국어 문장
 }
 
-/* ---------- 읽어주기 (TTS, 버튼으로만) ---------- */
-function speak(s){
-  if(!s||!s.t||!window.speechSynthesis) return;
+/* ---------- 읽어주기 (뉴럴 TTS, 버튼으로만) ---------- */
+let player=null, audioReady=false;
+const SILENT='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
+function unlockAudio(){ // iOS: 첫 사용자 제스처에서 오디오 잠금 해제
+  if(!player) player=new Audio();
+  if(audioReady) return;
+  player.src=SILENT; player.play().then(()=>{audioReady=true;}).catch(()=>{});
+}
+function deviceSpeak(s){ // 폴백: 기기 내장 음성
+  if(!window.speechSynthesis) return;
   speechSynthesis.cancel();
   const u=new SpeechSynthesisUtterance(s.t); u.lang=s.lang; u.rate=0.95;
   const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.toLowerCase().startsWith(s.lang.slice(0,2)));
-  if(v) u.voice=v;
-  speechSynthesis.speak(u);
+  if(v) u.voice=v; speechSynthesis.speak(u);
+}
+async function speak(s){
+  if(!s||!s.t) return;
+  unlockAudio();
+  try{
+    const res=await fetch('/api/tts',{ method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ text:s.t, lang:s.lang, pass:getPass() }) });
+    if(res.ok){
+      const url=URL.createObjectURL(await res.blob());
+      if(!player) player=new Audio();
+      player.pause(); player.src=url;
+      await player.play();
+      player.onended=()=>URL.revokeObjectURL(url);
+      return;
+    }
+  }catch(e){}
+  deviceSpeak(s); // 키 미설정/실패 시 기기 음성
 }
 
 /* ---------- 음성 인식 ---------- */
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 let rec=null, recording=null;
 function startRec(dir){
+  unlockAudio();
   if(!ensurePass()) return;
   if(!SR){ status('이 브라우저는 음성인식 미지원 (크롬 권장)'); setTimeout(()=>status(''),2500); return; }
   if(recording){ stopRec(); return; }
