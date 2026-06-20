@@ -65,6 +65,12 @@
   .fav.sel{ border-color:var(--accent); background:#ffffff0a; }
   .fav.sel .ko{ color:var(--accent); }
   .empty{ color:#46505c; text-align:center; padding:24px 0; }
+  #interp{ position:fixed; top:8px; left:10px; z-index:20; background:#0008; color:#8a93a0; border:none; border-radius:8px; padding:5px 10px; font-size:13px; font-weight:600; cursor:pointer; }
+  #interp.on{ color:var(--accent); }
+  .tonebar{ flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:2px 20px 8px; }
+  .tonebar input[type=range]{ flex:1; accent-color:var(--accent); }
+  .tonebar .lab{ font-size:12px; color:var(--dim); white-space:nowrap; }
+  .tonebar .now{ font-size:12px; color:var(--accent); font-weight:700; min-width:52px; text-align:right; }
   .hidden{ display:none !important; }
 
   /* 바 모드: 폰을 가로로 돌리면 좌/우로 나뉘고, 둘 다 똑바로(나란히 앉은 상황) */
@@ -98,6 +104,11 @@
       <div class="main-ja" id="mainMe"><span class="placeholder">버튼을 눌러 한국어로 말하기</span></div>
       <div class="yomi" id="yomiMe"></div>
     </div></div>
+    <div class="tonebar">
+      <span class="lab">친밀도</span>
+      <input type="range" id="toneSlider" min="0" max="100" step="5">
+      <span class="now" id="toneLabel"></span>
+    </div>
     <div class="controls">
       <button class="mic" id="micMe">🎤 한국어로 말하기</button>
       <button class="iconbtn" id="speakMe" title="읽어주기">🔊</button>
@@ -107,6 +118,7 @@
     </div>
   </div>
 
+  <button id="interp">🎙 통역사 ON</button>
   <button id="gear">⚙︎</button>
   <div id="status"></div>
 
@@ -152,7 +164,7 @@ $('#savePass').onclick=()=>{ const v=$('#passInput').value.trim(); if(v)localSto
 async function interpretStream(text, dir, onDelta){
   const res = await fetch('/api/translate',{
     method:'POST', headers:{'content-type':'application/json'},
-    body: JSON.stringify({ text, dir, pass:getPass() })
+    body: JSON.stringify({ text, dir, pass:getPass(), tone:getTone() })
   });
   if(res.status===401){ localStorage.removeItem(PASS_LS); ensurePass('암호가 틀렸어요. 다시 입력해 주세요.'); throw new Error('암호 오류'); }
   if(!res.ok){ throw new Error('서버 오류 '+res.status); }
@@ -195,7 +207,7 @@ function renderJa2Ko(srcText, accText){
 }
 
 /* ---------- 읽어주기 (뉴럴 TTS, 버튼으로만) ---------- */
-let player=null, audioReady=false, lastUrl=null;
+let player=null, audioReady=false, lastUrl=null, playSeq=0, playAbort=null;
 const SILENT='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
 function unlockAudio(){ // iOS 오디오 잠금해제: 첫 제스처에서 단 1회만
   if(audioReady) return;
@@ -212,19 +224,25 @@ function deviceSpeak(s){ // 폴백: 기기 내장 음성
 async function speak(s, voiceId){
   if(!s||!s.t) return;
   unlockAudio();
-  if(!player) player=new Audio();
+  const seq=++playSeq;                       // 새 재생 요청 → 이전 것 무효화
+  if(playAbort){ try{ playAbort.abort(); }catch(e){} }
+  playAbort=new AbortController();
+  if(window.speechSynthesis) speechSynthesis.cancel();
+  if(player){ try{ player.pause(); }catch(e){} } else { player=new Audio(); }
   try{
-    const res=await fetch('/api/tts',{ method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ text:s.t, lang:s.lang, pass:getPass(), voice:voiceId }) });
+    const res=await fetch('/api/tts',{ method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ text:s.t, lang:s.lang, pass:getPass(), voice:voiceId }), signal:playAbort.signal });
+    if(seq!==playSeq) return;                 // 그새 더 최신 요청이 들어옴 → 무시
     if(res.ok){
       const blob=await res.blob();
-      if(lastUrl){ try{ URL.revokeObjectURL(lastUrl); }catch(e){} }   // 이전 것만 정리(현재 재생 영향 X)
+      if(seq!==playSeq) return;
+      if(lastUrl){ try{ URL.revokeObjectURL(lastUrl); }catch(e){} }
       lastUrl=URL.createObjectURL(blob);
-      try{ player.pause(); }catch(e){}
       player.src=lastUrl;
       await player.play();
       return;
     }
-  }catch(e){}
+  }catch(e){ if(e&&e.name==='AbortError') return; }
+  if(seq!==playSeq) return;
   deviceSpeak(s); // 키 미설정/실패 시 기기 음성
 }
 
@@ -249,6 +267,9 @@ function startRec(dir){
     try{
       if(dir==='ko2ja') renderKo2Ja(text,'…'); else renderJa2Ko(text,'…');
       await interpretStream(text, dir, acc=>{ if(dir==='ko2ja') renderKo2Ja(text,acc); else renderJa2Ko(text,acc); });
+      if(interpOn()){ // 통역사 모드: 말 끝나면 상대 언어 자동 읽어주기
+        if(dir==='ko2ja') speak(meSpeak, getVoice('me')); else speak(themSpeak, getVoice('them'));
+      }
     }catch(err){ status(err.message); setTimeout(()=>status(''),3500); }
   };
   try{ rec.start(); }catch(e){}
@@ -324,6 +345,20 @@ $('#micMe').onclick=()=>startRec('ko2ja');
 $('#micThem').onclick=()=>startRec('ja2ko');
 $('#speakMe').onclick=()=>speak(meSpeak, getVoice('me'));
 $('#speakThem').onclick=()=>speak(themSpeak, getVoice('them'));
+
+/* ---------- 친밀도 슬라이더 ---------- */
+const TONE_LS='jp_tone';
+const getTone=()=>{ const v=parseInt(localStorage.getItem(TONE_LS),10); return isNaN(v)?20:v; };
+const toneText=v=> v<=15?'아주 정중':v<=35?'정중':v<=60?'보통':v<=80?'친근':'반말';
+(function(){ const sl=$('#toneSlider'); sl.value=getTone(); $('#toneLabel').textContent=toneText(getTone());
+  sl.oninput=()=>{ const v=+sl.value; localStorage.setItem(TONE_LS,v); $('#toneLabel').textContent=toneText(v); }; })();
+
+/* ---------- 통역사 모드 토글 (기본 ON) ---------- */
+const INTERP_LS='jp_interp';
+const interpOn=()=> localStorage.getItem(INTERP_LS)!=='0';
+function renderInterp(){ const on=interpOn(); $('#interp').classList.toggle('on',on); $('#interp').textContent='🎙 통역사 '+(on?'ON':'OFF'); }
+$('#interp').onclick=()=>{ localStorage.setItem(INTERP_LS, interpOn()?'0':'1'); renderInterp(); };
+renderInterp();
 
 /* 모드 전환 안내 (세로=테이블 / 가로=바) */
 const mq=window.matchMedia('(orientation:landscape)');
