@@ -183,12 +183,12 @@ function renderJa2Ko(srcText, accText){
 }
 
 /* ---------- 읽어주기 (뉴럴 TTS, 버튼으로만) ---------- */
-let player=null, audioReady=false;
+let player=null, audioReady=false, lastUrl=null;
 const SILENT='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
-function unlockAudio(){ // iOS: 첫 사용자 제스처에서 오디오 잠금 해제
-  if(!player) player=new Audio();
+function unlockAudio(){ // iOS 오디오 잠금해제: 첫 제스처에서 단 1회만
   if(audioReady) return;
-  player.src=SILENT; player.play().then(()=>{audioReady=true;}).catch(()=>{});
+  audioReady=true;
+  try{ if(!player) player=new Audio(); player.src=SILENT; const r=player.play(); if(r&&r.catch) r.catch(()=>{}); }catch(e){}
 }
 function deviceSpeak(s){ // 폴백: 기기 내장 음성
   if(!window.speechSynthesis) return;
@@ -200,14 +200,16 @@ function deviceSpeak(s){ // 폴백: 기기 내장 음성
 async function speak(s){
   if(!s||!s.t) return;
   unlockAudio();
+  if(!player) player=new Audio();
   try{
     const res=await fetch('/api/tts',{ method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ text:s.t, lang:s.lang, pass:getPass() }) });
     if(res.ok){
-      const url=URL.createObjectURL(await res.blob());
-      if(!player) player=new Audio();
-      player.pause(); player.src=url;
+      const blob=await res.blob();
+      if(lastUrl){ try{ URL.revokeObjectURL(lastUrl); }catch(e){} }   // 이전 것만 정리(현재 재생 영향 X)
+      lastUrl=URL.createObjectURL(blob);
+      try{ player.pause(); }catch(e){}
+      player.src=lastUrl;
       await player.play();
-      player.onended=()=>URL.revokeObjectURL(url);
       return;
     }
   }catch(e){}
