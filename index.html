@@ -62,6 +62,8 @@
   .fav .txt{ flex:1; min-width:0; }
   .fav .ko{ font-size:15px; font-weight:600; } .fav .ja{ font-size:14px; color:#9fb4ca; margin-top:2px; } .fav .ym{ font-size:13px; color:var(--accent); margin-top:2px; }
   .fav .del{ background:none; border:none; color:#6b7785; font-size:18px; padding:6px; cursor:pointer; }
+  .fav.sel{ border-color:var(--accent); background:#ffffff0a; }
+  .fav.sel .ko{ color:var(--accent); }
   .empty{ color:#46505c; text-align:center; padding:24px 0; }
   .hidden{ display:none !important; }
 
@@ -84,7 +86,7 @@
       <div class="main-ja" id="mainThem"><span class="placeholder">ボタンを押して話してください</span></div>
       <div class="yomi" id="yomiThem"></div>
     </div></div>
-    <div class="controls"><button class="mic" id="micThem">🎤 日本語で話す</button><button class="iconbtn" id="speakThem" title="読み上げ">🔊</button></div>
+    <div class="controls"><button class="mic" id="micThem">🎤 日本語で話す</button><button class="iconbtn" id="speakThem" title="読み上げ">🔊</button><button class="iconbtn" id="voiceThem" title="声を選ぶ">🎚</button></div>
   </div>
 
   <div class="divider"></div>
@@ -99,6 +101,7 @@
     <div class="controls">
       <button class="mic" id="micMe">🎤 한국어로 말하기</button>
       <button class="iconbtn" id="speakMe" title="읽어주기">🔊</button>
+      <button class="iconbtn" id="voiceMe" title="목소리 선택">🎚</button>
       <button class="iconbtn" id="saveFav" title="즐겨찾기 저장">☆</button>
       <button class="iconbtn" id="openFav" title="즐겨찾기 목록">⭐︎</button>
     </div>
@@ -114,6 +117,15 @@
       <p id="setupMsg">공유받은 암호를 넣으면 이 기기에 기억됩니다.</p>
       <input id="passInput" type="password" placeholder="암호" autocomplete="off">
       <button class="primary" id="savePass">시작</button>
+    </div>
+  </div>
+
+  <!-- 목소리 선택 -->
+  <div id="voiceBox" class="overlay hidden">
+    <div class="card" id="voiceCard">
+      <div class="head"><h2 id="voiceTitle">목소리 선택</h2><button class="x" id="closeVoice">✕</button></div>
+      <p id="voiceHint">고르면 미리듣기가 나옵니다. ▶로 다시 들어요.</p>
+      <div id="voiceList"></div>
     </div>
   </div>
 
@@ -197,12 +209,12 @@ function deviceSpeak(s){ // 폴백: 기기 내장 음성
   const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.toLowerCase().startsWith(s.lang.slice(0,2)));
   if(v) u.voice=v; speechSynthesis.speak(u);
 }
-async function speak(s){
+async function speak(s, voiceId){
   if(!s||!s.t) return;
   unlockAudio();
   if(!player) player=new Audio();
   try{
-    const res=await fetch('/api/tts',{ method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ text:s.t, lang:s.lang, pass:getPass() }) });
+    const res=await fetch('/api/tts',{ method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ text:s.t, lang:s.lang, pass:getPass(), voice:voiceId }) });
     if(res.ok){
       const blob=await res.blob();
       if(lastUrl){ try{ URL.revokeObjectURL(lastUrl); }catch(e){} }   // 이전 것만 정리(현재 재생 영향 X)
@@ -269,10 +281,49 @@ function renderFavList(){
   });
 }
 
+/* ---------- 목소리 선택(사이드별) ---------- */
+const VOICES=[
+  {id:'pNInz6obpgDQGcFmaJgB', ko:'♂ 남성 1', ja:'♂ 男性 1'},
+  {id:'ErXwobaYiN019PkySvjV', ko:'♂ 남성 2', ja:'♂ 男性 2'},
+  {id:'TxGEqnHWrfWFTfGW9XjX', ko:'♂ 남성 3', ja:'♂ 男性 3'},
+  {id:'21m00Tcm4TlvDq8ikWAM', ko:'♀ 여성 1', ja:'♀ 女性 1'},
+  {id:'EXAVITQu4vr4xnSDxMaL', ko:'♀ 여성 2', ja:'♀ 女性 2'},
+  {id:'MF3mGyEYCl7XYWbV9V6O', ko:'♀ 여성 3', ja:'♀ 女性 3'},
+];
+const vKey=side=>side==='me'?'voice_me':'voice_them';
+const vDef=side=>side==='me'?VOICES[0].id:VOICES[3].id;
+const getVoice=side=>localStorage.getItem(vKey(side))||vDef(side);
+let voiceSide='me';
+function openVoice(side){
+  voiceSide=side;
+  $('#voiceCard').style.transform = side==='them'?'rotate(180deg)':'none';
+  $('#voiceTitle').textContent = side==='them'?'声を選ぶ':'목소리 선택';
+  $('#voiceHint').textContent = side==='them'?'選ぶと試聴できます。▶でもう一度。':'고르면 미리듣기가 나옵니다. ▶로 다시 들어요.';
+  renderVoiceList(); $('#voiceBox').classList.remove('hidden');
+}
+function sampleVoice(id){
+  const s = voiceSide==='me' ? {t:'こんにちは、よろしくお願いします', lang:'ja-JP'} : {t:'안녕하세요, 반갑습니다', lang:'ko-KR'};
+  speak(s, id);
+}
+function renderVoiceList(){
+  const cur=getVoice(voiceSide); const box=$('#voiceList'); box.innerHTML='';
+  VOICES.forEach(v=>{
+    const row=document.createElement('div'); row.className='fav'+(v.id===cur?' sel':'');
+    row.innerHTML='<div class="txt"><div class="ko"></div></div><button class="del">▶</button>';
+    row.querySelector('.ko').textContent = voiceSide==='them'?v.ja:v.ko;
+    row.querySelector('.txt').onclick=()=>{ localStorage.setItem(vKey(voiceSide), v.id); renderVoiceList(); sampleVoice(v.id); };
+    row.querySelector('.del').onclick=e=>{ e.stopPropagation(); sampleVoice(v.id); };
+    box.appendChild(row);
+  });
+}
+$('#voiceMe').onclick=()=>openVoice('me');
+$('#voiceThem').onclick=()=>openVoice('them');
+$('#closeVoice').onclick=()=>$('#voiceBox').classList.add('hidden');
+
 $('#micMe').onclick=()=>startRec('ko2ja');
 $('#micThem').onclick=()=>startRec('ja2ko');
-$('#speakMe').onclick=()=>speak(meSpeak);
-$('#speakThem').onclick=()=>speak(themSpeak);
+$('#speakMe').onclick=()=>speak(meSpeak, getVoice('me'));
+$('#speakThem').onclick=()=>speak(themSpeak, getVoice('them'));
 
 /* 모드 전환 안내 (세로=테이블 / 가로=바) */
 const mq=window.matchMedia('(orientation:landscape)');
