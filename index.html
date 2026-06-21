@@ -357,6 +357,7 @@ async function ensureVoices(){
 }
 async function openVoice(side){
   voiceSide=side;
+  voiceCatalog=null;   // 열 때마다 새로 불러오기(방금 ElevenLabs에 추가한 보이스 즉시 반영)
   $('#voiceCard').style.transform = side==='them'?'rotate(180deg)':'none';
   $('#voiceTitle').textContent = side==='them'?'声を選ぶ':'목소리 선택';
   $('#voiceHint').textContent = side==='them'?'選ぶと試聴。▶で再生。':'고르면 미리듣기. ▶로 다시.';
