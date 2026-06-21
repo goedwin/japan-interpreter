@@ -11,8 +11,24 @@ export default async function handler(req){
   if(typeof text !== 'string' || !text.trim() || text.length > 400) return new Response('bad text', { status:400 });
 
   const isKo = (lang || '').toLowerCase().startsWith('ko');
-  const reqVoice = (typeof voice === 'string' && /^[A-Za-z0-9]{16,40}$/.test(voice)) ? voice : null;
+  const reqVoice = (typeof voice === 'string' && /^[A-Za-z0-9_-]{4,48}$/.test(voice)) ? voice : null;
   const audioHeaders = { 'content-type':'audio/mpeg', 'cache-control':'no-store' };
+
+  // 0) Google Cloud TTS — 일/한 네이티브 뉴럴. 키 있으면 최우선. base64 → 바이너리.
+  if(process.env.GOOGLE_TTS_API_KEY){
+    const languageCode = isKo ? 'ko-KR' : 'ja-JP';
+    const name = reqVoice || (isKo ? 'ko-KR-Neural2-A' : 'ja-JP-Neural2-C');
+    const r = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize?key='+process.env.GOOGLE_TTS_API_KEY, {
+      method:'POST', headers:{ 'content-type':'application/json' },
+      body: JSON.stringify({ input:{ text }, voice:{ languageCode, name }, audioConfig:{ audioEncoding:'MP3', volumeGainDb:4, speakingRate:1.0 } })
+    });
+    if(!r.ok){ const t=await r.text().catch(()=> ''); return new Response('google '+r.status+' '+t.slice(0,180), { status:502 }); }
+    const j = await r.json();
+    if(!j.audioContent) return new Response('google no audio', { status:502 });
+    const bin = atob(j.audioContent); const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return new Response(bytes, { headers: audioHeaders });
+  }
 
   // 1) ElevenLabs (다국어 v2 — 일/한 자연스러움). 클라이언트 선택 > env > 기본.
   if(process.env.ELEVENLABS_API_KEY){

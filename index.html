@@ -342,28 +342,19 @@ function renderFavList(){
   });
 }
 
-/* ---------- 목소리 선택(사이드별, 내 ElevenLabs 보이스 자동 목록) ---------- */
-let voiceCatalog=null, voiceSide='me';
-const FALLBACK_VOICES=[{id:'21m00Tcm4TlvDq8ikWAM',name:'Rachel',meta:'여성'},{id:'pNInz6obpgDQGcFmaJgB',name:'Adam',meta:'남성'}];
+/* ---------- 목소리 선택(사이드별 네이티브, Google) ---------- */
+const VOICES_JA=[ {id:'ja-JP-Neural2-C', name:'男性 1'}, {id:'ja-JP-Neural2-D', name:'男性 2'}, {id:'ja-JP-Neural2-B', name:'女性 1'} ];
+const VOICES_KO=[ {id:'ko-KR-Neural2-C', name:'남성 1'}, {id:'ko-KR-Neural2-A', name:'여성 1'}, {id:'ko-KR-Neural2-B', name:'여성 2'} ];
+let voiceSide='me';
+const sideVoices=side=>side==='me'?VOICES_JA:VOICES_KO;
 const vKey=side=>side==='me'?'voice_me':'voice_them';
-const getVoice=side=>localStorage.getItem(vKey(side))||'';
-async function ensureVoices(){
-  if(voiceCatalog) return;
-  try{
-    const r=await fetch('/api/voices?pass='+encodeURIComponent(getPass()));
-    if(r.ok){ const d=await r.json(); voiceCatalog=(d.voices||[]).map(v=>({id:v.id,name:v.name||'(이름없음)',meta:[v.gender,v.lang].filter(Boolean).join(' · ')})); }
-  }catch(e){}
-  if(!voiceCatalog||!voiceCatalog.length) voiceCatalog=FALLBACK_VOICES.slice();
-}
-async function openVoice(side){
+const getVoice=side=>localStorage.getItem(vKey(side))|| sideVoices(side)[0].id;
+function openVoice(side){
   voiceSide=side;
-  voiceCatalog=null;   // 열 때마다 새로 불러오기(방금 ElevenLabs에 추가한 보이스 즉시 반영)
   $('#voiceCard').style.transform = side==='them'?'rotate(180deg)':'none';
   $('#voiceTitle').textContent = side==='them'?'声を選ぶ':'목소리 선택';
   $('#voiceHint').textContent = side==='them'?'選ぶと試聴。▶で再生。':'고르면 미리듣기. ▶로 다시.';
-  $('#voiceList').innerHTML='<div class="empty">불러오는 중…</div>';
-  $('#voiceBox').classList.remove('hidden');
-  await ensureVoices(); renderVoiceList();
+  renderVoiceList(); $('#voiceBox').classList.remove('hidden');
 }
 function sampleVoice(id){
   const s = voiceSide==='me' ? {t:'こんにちは、よろしくお願いします', lang:'ja-JP'} : {t:'안녕하세요, 반갑습니다', lang:'ko-KR'};
@@ -371,11 +362,10 @@ function sampleVoice(id){
 }
 function renderVoiceList(){
   const cur=getVoice(voiceSide); const box=$('#voiceList'); box.innerHTML='';
-  (voiceCatalog||[]).forEach(v=>{
+  sideVoices(voiceSide).forEach(v=>{
     const row=document.createElement('div'); row.className='fav'+(v.id===cur?' sel':'');
-    row.innerHTML='<div class="txt"><div class="ko"></div><div class="ja"></div></div><button class="del">▶</button>';
+    row.innerHTML='<div class="txt"><div class="ko"></div></div><button class="del">▶</button>';
     row.querySelector('.ko').textContent=v.name;
-    row.querySelector('.ja').textContent=v.meta||'';
     row.querySelector('.txt').onclick=()=>{ localStorage.setItem(vKey(voiceSide), v.id); renderVoiceList(); sampleVoice(v.id); };
     row.querySelector('.del').onclick=e=>{ e.stopPropagation(); sampleVoice(v.id); };
     box.appendChild(row);
