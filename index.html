@@ -221,11 +221,27 @@ function renderJa2Ko(srcText, accText){
 
 /* ---------- 읽어주기 (뉴럴 TTS, 버튼으로만) ---------- */
 let player=null, audioReady=false, lastUrl=null, playSeq=0, playAbort=null;
+let audioCtx=null, gainNode=null, srcNode=null;
+const GAIN=1.8;   // 통역사 음성 증폭 배율(너무 크면 깨짐 — 1.5~2.0 권장)
 const SILENT='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
-function unlockAudio(){ // iOS 오디오 잠금해제: 첫 제스처에서 단 1회만
-  if(audioReady) return;
-  audioReady=true;
-  try{ if(!player) player=new Audio(); player.src=SILENT; const r=player.play(); if(r&&r.catch) r.catch(()=>{}); }catch(e){}
+function unlockAudio(){ // iOS 오디오 잠금해제 + WebAudio 증폭 그래프(제스처 안에서)
+  if(!player){ player=new Audio(); player.volume=1; }
+  if(!audioReady){
+    audioReady=true;
+    try{ player.src=SILENT; const r=player.play(); if(r&&r.catch) r.catch(()=>{}); }catch(e){}
+  }
+  try{
+    if(!audioCtx){
+      const AC=window.AudioContext||window.webkitAudioContext;
+      if(AC){
+        audioCtx=new AC();
+        srcNode=audioCtx.createMediaElementSource(player);
+        gainNode=audioCtx.createGain(); gainNode.gain.value=GAIN;
+        srcNode.connect(gainNode); gainNode.connect(audioCtx.destination);
+      }
+    }
+    if(audioCtx && audioCtx.state==='suspended') audioCtx.resume();
+  }catch(e){}
 }
 function deviceSpeak(s){ // 폴백: 기기 내장 음성
   if(!window.speechSynthesis) return;
@@ -241,22 +257,24 @@ async function speak(s, voiceId){
   if(playAbort){ try{ playAbort.abort(); }catch(e){} }
   playAbort=new AbortController();
   if(window.speechSynthesis) speechSynthesis.cancel();
-  if(player){ try{ player.pause(); }catch(e){} } else { player=new Audio(); }
+  if(!player) player=new Audio();
+  let res=null;
   try{
-    const res=await fetch('/api/tts',{ method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ text:s.t, lang:s.lang, pass:getPass(), voice:voiceId }), signal:playAbort.signal });
-    if(seq!==playSeq) return;                 // 그새 더 최신 요청이 들어옴 → 무시
-    if(res.ok){
-      const blob=await res.blob();
-      if(seq!==playSeq) return;
+    res=await fetch('/api/tts',{ method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({ text:s.t, lang:s.lang, pass:getPass(), voice:voiceId }), signal:playAbort.signal });
+  }catch(e){ if(e&&e.name==='AbortError') return; res=null; }   // fetch 취소만 조용히 종료
+  if(seq!==playSeq) return;                   // 더 최신 요청이 들어옴
+  if(res && res.ok){
+    let blob=null; try{ blob=await res.blob(); }catch(e){}
+    if(seq!==playSeq) return;
+    if(blob){
       if(lastUrl){ try{ URL.revokeObjectURL(lastUrl); }catch(e){} }
       lastUrl=URL.createObjectURL(blob);
-      player.src=lastUrl;
-      await player.play();
-      return;
+      player.src=lastUrl;                     // src 재지정만으로 이전 재생 자동 중단
+      try{ await player.play(); return; }
+      catch(e){ if(seq===playSeq) deviceSpeak(s); return; }   // 재생 막히면 기기음성(먹통 방지)
     }
-  }catch(e){ if(e&&e.name==='AbortError') return; }
-  if(seq!==playSeq) return;
-  deviceSpeak(s); // 키 미설정/실패 시 기기 음성
+  }
+  if(seq===playSeq) deviceSpeak(s);           // 서버 실패 시 기기음성
 }
 
 /* ---------- 통역 실행(음성/플러팅 공용) ---------- */
